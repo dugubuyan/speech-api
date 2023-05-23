@@ -60,10 +60,15 @@ router.post('/asr', async (req, res, next) => {
     return Date.now();
   }
   const filename = getFileName();
-  fetchFile(url, filename).then(r => {
-    console.log("done!")
-    asr(filename, res)
-  })
+  try{
+    fetchFile(url, filename).then(r => {
+      console.log("done!")
+      asr(filename,req.body.paras, res)
+    })
+  }catch (e) {
+    res.status(500).json({error:'Internal error'})
+  }
+
 });
 
 function runAsyncTask(exec, args, callback) {
@@ -90,7 +95,7 @@ async function fetchFile(url, filename){
   const buffer = await response.buffer();
   fs.writeFileSync(filename, buffer)
 }
-async function asr(filename, res){
+async function asr(filename, params, res){
   const destFile = filename + '.wav' ;
   console.log('path:', filename, ", dest: ", destFile)
   let error = 0
@@ -106,7 +111,15 @@ async function asr(filename, res){
     return;
   }
   console.log("now, speech to txt")
-  runAsyncTask('./speech2txt', ['-otxt',destFile], (resolve, err)=>{
+  const args = ['-otxt', destFile]
+  if(params !== undefined && params !== null){
+    console.log("params:", params)
+    params.trim().split(" ").forEach(p=>{
+      args.push(p)
+    })
+  }
+  console.log(args)
+  runAsyncTask('./speech2txt', args, (resolve, err)=>{
     if(err ===0){
       const resultFilename = destFile + '.txt'
       const data = fs.readFileSync(resultFilename);
