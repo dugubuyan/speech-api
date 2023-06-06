@@ -49,7 +49,7 @@ router.post('/asr', async (req, res, next) => {
 
   function getFileName() {
     if(req.body.file_name !== undefined){
-      return path.resolve(__dirname, '../'+ dest_path + Date.now()+"-" + req.body.file_name);
+      return path.resolve(__dirname, '../'+ dest_path + req.body.file_name);
     }else{
       const name = path.basename(url)
       console.log("name:", name)
@@ -119,9 +119,9 @@ async function asr(filename, params, res){
     })
   }
   console.log(args)
+  const resultFilename = destFile + '.txt'
   runAsyncTask('./speech2txt', args, (resolve, err)=>{
     if(err ===0){
-      const resultFilename = destFile + '.txt'
       const data = fs.readFileSync(resultFilename);
       console.log("同步读取: " , resultFilename, "\t content:", data.toString());
       resolve(data.toString())
