@@ -9,4 +9,5 @@ router.get('/', function(req, res, next) {
 router.get('/start', function(req, res, next) {
   res.sendFile('index');
 });
+
 module.exports = router;
