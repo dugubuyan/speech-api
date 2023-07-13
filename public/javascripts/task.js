@@ -19,6 +19,10 @@ function getOneTaskByCondition(key, value){
 function updateTaskResult(task_id, updObj){
     return updateOneDoc("task","task_id",task_id, updObj)
 }
+function deleteTaskByTaskId(task_id){
+    return deleteOneDoc("task", "task_id", task_id)
+}
+
 function getTaskByUser(user){
     return {txt:"txt"}
 }
@@ -59,11 +63,11 @@ async function getOneDoc(collection, key, value){
     const conn = await MongoClient.connect(url).catch((err) => {
         console.log("connect fail:", err); throw err
     })
-    console.log("where:", whereStr)
+    // console.log("where:", whereStr)
     const result = await conn.db("chains").collection(collection).find(whereStr).toArray()
         .catch(err => {console.log("db operate fail", err);})
         .finally(()=> conn.close())
-    console.log("result:", result)
+    // console.log("result:", result)
     if(result.length > 0){
         return result[0]
     }else{
@@ -92,15 +96,18 @@ async function updateOneDoc(collection, key, value, updObject) {
         console.log("db operate fail", err);throw err;
     }).finally(() => conn.close())
 }
-function deleteOneDoc(collection, key, value){
-    MongoClient.connect(url).then((conn)=>{
-        const dbo = conn.db("chains");
-        const whereStr = {key: value};
-        dbo.collection("site").deleteOne(whereStr)
-            .catch(err => {console.log("db operate fail", err);})
-            .finally(()=> conn.close())
-    }).catch((err) => {
-        console.log("connect fail:", err)})
+
+async function deleteOneDoc(collection, key, value){
+    const conn = await MongoClient.connect(url).catch((err) => {
+        console.log("connect fail:", err);
+        throw err
+    });
+    const whereStr = new Object;
+    whereStr[key] = value
+    console.log("condition:", whereStr)
+    await conn.db("chains").collection(collection).deleteOne(whereStr)
+        .catch(err => {console.log("db operate fail", err);})
+        .finally(()=> conn.close())
 }
 
 function deleteDocs(collection, status){
@@ -113,4 +120,4 @@ function deleteDocs(collection, status){
     }).catch((err) => {
         console.log("connect fail:", err)})
 }
-module.exports = {insertTask, getTasks, getTaskByTaskId, updateTaskResult, getOneTaskByCondition};
+module.exports = {insertTask, getTasks, getTaskByTaskId, updateTaskResult, getOneTaskByCondition, deleteTaskByTaskId};

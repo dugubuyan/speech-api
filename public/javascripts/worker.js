@@ -1,6 +1,5 @@
 const {updateTaskResult} = require("./task");
 const {getTaskByTaskId} = require("./task");
-const {getTasks} = require("./task");
 const fetch = require('node-fetch');
 const fs = require("fs");
 const child_process = require('child_process');
@@ -23,6 +22,7 @@ async function doWork(){
         cbMap.delete(taskId)
     }
 }
+
 function addWork(task_id, cbUrl){
     if(task_id === undefined || task_id === null){
         console.error("task id is null")
@@ -46,7 +46,8 @@ async function flushTasks() {
         })
     } else {
         const now = new Date()
-        if(now.getSeconds() - task.createDate.getSeconds() > 3600  ){
+        const time = new Date(task.createDate)
+        if(now.getTime() - time.getTime() > 3600 * 1000  ){
             updateTaskResult(task.task_id, {status: 3}).then(()=>{
                 console.log("task out time:", task.task_id)
             })
@@ -57,6 +58,9 @@ async function flushTasks() {
 }
 function workDone(taskId, data){
     const obj = {status :2};
+    if(data === -1){
+        obj.status = 4 // fail
+    }
     updateTaskResult(taskId, obj).then(()=>{
         if(cbMap.has(taskId)){
             const cbUrl = cbMap.get(taskId)
@@ -70,15 +74,21 @@ async function work(taskId){
     const task = await getTaskByTaskId(taskId)
     const url = task.url
     const paras = task.paras
-    const filename = task.filename
+    const filename = task.fullPath
     try {
-        await fetchFile(url, filename)
-        console.log("done!")
+        if(url !== undefined && url !== null){
+            await fetchFile(url, filename)
+            console.log("fetch remote file done!")
+        }else if(task.youtubeUrl !== undefined && task.youtubeUrl !== null){
+            const args = [task.youtubeUrl, "-o",'%(title)s.%(ext)s']
+            await runAsyncTask("youtube-dl", args);
+        }
         const data = await asrAsync(filename, paras)
         console.log("res:",data)
         return data
     } catch (e) {
         console.log("error:", e)
+        return -1
     }
 }
 async function asrAsync(filename, params){
@@ -97,6 +107,24 @@ async function fetchFile(url, filename){
     const buffer = await response.buffer();
     fs.writeFileSync(filename, buffer)
 }
+function runAsyncTaskStdout(exec, args) {
+    return new Promise((resolve, reject) => {
+        const child = child_process.spawn(exec, args);
+        child.stdout.on('data', data => {
+            console.log('stdout: ' + data);
+            resolve(data.toString().trim())
+        });
+
+        child.stderr.on('data', data => {
+            console.log('stderr: ' + data);
+        });
+
+        child.on('close', err => {
+            console.log('子进程已退出，退出码 '+err, "--->args:", args);
+        });
+    });
+}
+
 function runAsyncTask(exec, args) {
     return new Promise((resolve, reject) => {
         const child = child_process.spawn(exec, args);
@@ -117,7 +145,7 @@ function runAsyncTask(exec, args) {
     });
 }
 function genSpeech2TxtArgs(params, destFile){
-    const args = ['-otxt', destFile]
+    const args = ['-olrc', '-otxt', destFile]
     if(params !== undefined && params !== null){
         console.log("params:", params)
         params.trim().split(" ").forEach(p=>{
@@ -127,4 +155,4 @@ function genSpeech2TxtArgs(params, destFile){
     console.log(args)
     return args
 }
-module.exports = {addWork,fetchFile, runAsyncTask, genSpeech2TxtArgs}
+module.exports = {fetchFile, runAsyncTask, genSpeech2TxtArgs, runAsyncTaskStdout}
