@@ -7,6 +7,9 @@ const multer = require('multer');
 const path = require('path');
 const callRemote = require("../public/javascripts/thirdCall");
 const fs = require("fs");
+const {runAsyncTaskStdout} = require("../public/javascripts/worker");
+const {deleteTaskByTaskId} = require("../public/javascripts/task");
+const {getStaticUrl} = require("../public/javascripts/const");
 const {addWork} = require("../public/javascripts/worker");
 const {runAsyncTask} = require("../public/javascripts/worker");
 const {genSpeech2TxtArgs} = require("../public/javascripts/worker");
@@ -24,7 +27,7 @@ const storage = multer.diskStorage({
   },
 //指定上传到服务器文件的名称
   filename: function (req, file, cb) {
-    cb(null, Date.now() + '-' + file.originalname)
+    cb(null, crypto.randomUUID() + '-' + file.originalname)
   }
 })
 const upload = multer({
@@ -44,26 +47,109 @@ router.post('/asr/file', upload.single('file'), async (req, res) => {
   await asr(filename,req.body.paras, res);
 });
 
-router.post('/asr/async', function(req, res, next) {
+router.post('/asr/async/file', upload.single('file'), async (req, res) => {
   console.log('body:', req.body);
-  const url = req.body.speech_url;
-  const paras = req.body.paras;
-  const callBackUrl = req.body.call_back_url;
-  const taskId = req.body.task_id === undefined ? crypto.randomUUID(): req.body.task_id;
-  console.log('url path:', url);
-  const filename = getFileName(url, req.body.file_name);
-  const createDate = Date()
-  insertTask({url:url,paras:paras,task_id:taskId, filename:filename, status:0, callBackUrl: callBackUrl, createDate:createDate}, async function (res) {
+  console.log('接收到文件：', req.file);
+  console.log('paras:', req.body.paras);
+  const name = req.file.originalname
+  const taskId = req.file.filename.replace("-"+name, "")
+  const task = genTaskByFile(name, taskId)
+  insertTask(task, async function (res) {
     console.log("result:", res,"taskId:", taskId)
   })
   res.status(200).json({task_id:taskId})
 });
 
+router.post('/asr/async/youtube', async (req, res) => {
+  const youtubeUrl = req.query.youtubeUrl;
+  const taskId = crypto.randomUUID()
+  const args = ["--get-filename","--restrict-filenames", "--no-warnings", "-o",'%(title)s.%(ext)s', youtubeUrl]
+  const name = await runAsyncTaskStdout("youtube-dl", args);
+  const task = genTaskByFile(name, taskId)
+  task["youtubeUrl"] = youtubeUrl
+  insertTask(task, async function (res) {
+    console.log("result:", res,"taskId:", taskId)
+  })
+  res.status(200).json({task_id:taskId})
+});
+
+function genTaskByFile(name, taskId){
+  const src = getStaticUrl() + taskId + "-" +name
+  const fullPath = path.resolve(__dirname, '../'+ dest_path + taskId + "-" +name);
+  const createDate = Date()
+  const task = {task_id:taskId, name:name, src:src , fullPath:fullPath, status:0,
+    createDate:createDate}
+  return task
+}
+router.post('/asr/async', function(req, res, next) {
+  console.log('body:', req.body);
+  const url = req.body.speech_url;
+  const paras = req.body.paras;
+  const callBackUrl = req.body.call_back_url;
+  const desc = req.body.desc;
+  const taskId = req.body.task_id === undefined ? crypto.randomUUID(): req.body.task_id;
+  console.log('url path:', url);
+  const name = getFileName(url, req.body.file_name, taskId);
+  const fullPath = path.resolve(__dirname, '../'+ dest_path + taskId + "-" +name);
+  const createDate = Date()
+  const src = getStaticUrl() + taskId + "-" +name
+  insertTask({url:url,paras:paras,task_id:taskId, name:name, desc: desc,src:src , fullPath:fullPath, status:0, callBackUrl: callBackUrl, createDate:createDate}, async function (res) {
+    console.log("result:", res,"taskId:", taskId)
+  })
+  res.status(200).json({task_id:taskId})
+});
+router.post('/deleteTaskByTaskId', upload.single('file'), async (req, res) => {
+  console.log('task_id:', req.query.task_id);
+  const task_id = req.query.task_id
+  if(task_id !== undefined && task_id !== null){
+    await deleteTaskByTaskId(task_id)
+    res.status(200).json({})
+  }else{
+    res.status(500).json({err:'no task id provided'})
+  }
+});
 router.get('/getTasks', function(req, res, next) {
   getTasks().then(data=>{res.status(200).json(data)}).catch(err=>{
     console.log("error:",err)
     res.status(500).json({err:'no tasks'})
   })
+});
+router.get('/getMediaById?', function(req, res, next) {
+  console.log('task_id:', req.query.task_id);
+  const task_id = req.query.task_id
+  if(task_id !== undefined && task_id !== null){
+    getTaskByTaskId(task_id).then(r => {
+      const task = {id: task_id, name: r.name, src:r.src,desc: r.desc }
+      res.status(200).json(task)
+    }).catch(err=>{
+      console.log("error:",err)
+      res.status(500).json({err:'no task found'})
+    })
+  }else{
+    res.status(500).json({err:'no task id provided'})
+  }
+});
+
+router.get('/getLrcById', function(req, res, next) {
+  console.log('task_id:', req.query.task_id);
+  const task_id = req.query.task_id
+  if(task_id !== undefined && task_id !== null){
+    getTaskByTaskId(task_id).then(r => {
+      if(r.status !== 2){
+        const data = { text: "not finished"}
+        res.status(501).json(data)
+      }else{
+        const resultFilename = r.fullPath + ".wav.lrc"
+        const text = fs.readFileSync(resultFilename);
+        res.send(text.toString())
+      }
+    }).catch(err=>{
+      console.log("error:",err)
+      res.status(500).json({err:'no task found'})
+    })
+  }else{
+    res.status(500).json({err:'no task id provided'})
+  }
 });
 router.get('/getTaskResult', function(req, res, next) {
   console.log('task_id:', req.query.task_id);
@@ -122,17 +208,15 @@ router.post('/asr', async (req, res, next) => {
     res.status(500).json({error:'Internal error'})
   }
 });
-function getFileName(url, filename) {
+function getFileName(url, filename, taskId) {
   if(filename !== undefined){
-    return path.resolve(__dirname, '../'+ dest_path + file_name);
+    return filename;
   }else{
     const name = path.basename(url)
     console.log("name:", name)
-    if(name !== undefined){
-      return path.resolve(__dirname, '../'+ dest_path + Date.now()+"-"+ name)
-    }
+    return name
   }
-  return Date.now();
+  return taskId;
 }
 async function asr(filename, params, res){
   const destFile = filename + '.wav' ;
