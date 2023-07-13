@@ -114,7 +114,7 @@ router.get('/getTasks', function(req, res, next) {
     res.status(500).json({err:'no tasks'})
   })
 });
-router.get('/getMediaById?', function(req, res, next) {
+router.get('/getMediaById', function(req, res, next) {
   console.log('task_id:', req.query.task_id);
   const task_id = req.query.task_id
   if(task_id !== undefined && task_id !== null){
