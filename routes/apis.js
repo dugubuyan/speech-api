@@ -197,8 +197,9 @@ router.post('/asr', async (req, res, next) => {
   console.log('url path:', url);
   console.log('head:', req.headers);
   const fName = req.body.file_name
+  const taskId = crypto.randomUUID()
+  const filename = path.resolve(__dirname, '../'+ dest_path + taskId + "-" +fName);
 
-  const filename = getFileName(url, fName);
   try{
     fetchFile(url, filename).then(r => {
       console.log("done!")
@@ -231,20 +232,14 @@ async function asr(filename, params, res){
   console.log("now, speech to txt")
   const args = genSpeech2TxtArgs(params, destFile)
   const resultFilename = destFile + '.txt'
-  runAsyncTask('./speech2txt', args, (resolve, err)=>{
-    if(err ===0){
+  runAsyncTask('./speech2txt', args).then(e=>{
+    console.log("res:", e)
+    if(e === 0 ){
       const data = fs.readFileSync(resultFilename);
       console.log("同步读取: " , resultFilename, "\t content:", data.toString());
-      resolve(data.toString())
-    }else {
-      resolve(500)
-    }
-  }).then(data=>{
-    console.log("res:", data)
-    if(data === 500 ){
-      res.status(500);
+      res.status(200).json({ text: data.toString() });
     }else{
-      res.status(200).json({ text: data });
+      res.status(500)
     }
   })
 }
